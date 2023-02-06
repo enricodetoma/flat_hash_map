@@ -41,7 +41,14 @@ struct sherwood_v8_constants
         return metadata & bits_for_distance;
     }
 
-    static constexpr int num_jump_distances = 126;
+    static constexpr int num_jump_distances =
+#ifdef ENV64BIT
+    126
+#else // if 32 bits
+	100
+#endif
+	;
+
     // jump distances chosen like this:
     // 1. pick the first 16 integers to promote staying in the same block
     // 2. add the next 66 triangular numbers to get even jumps when
@@ -61,7 +68,11 @@ struct sherwood_v8_constants
 
         3741, 8385, 18915, 42486, 95703, 215496, 485605, 1091503, 2456436,
         5529475, 12437578, 27986421, 62972253, 141700195, 318819126, 717314626,
-        1614000520, 3631437253, 8170829695, 18384318876, 41364501751,
+        1614000520, 3631437253,
+
+#ifdef ENV64BIT
+
+		8170829695, 18384318876, 41364501751,
         93070021080, 209407709220, 471167588430, 1060127437995, 2385287281530,
         5366895564381, 12075513791265, 27169907873235, 61132301007778,
         137547673121001, 309482258302503, 696335090510256, 1566753939653640,
@@ -69,6 +80,7 @@ struct sherwood_v8_constants
         40154190394120111, 90346928493040500, 203280588949935750,
         457381324898247375, 1029107980662394500, 2315492957028380766,
         5209859150892887590,
+#endif
     };
 };
 template<typename T>
@@ -1153,6 +1165,29 @@ public:
         return insert_or_assign(std::move(key), std::forward<M>(m)).first;
     }
 
+	template<typename... Args>
+	std::pair<typename Table::iterator, bool> try_emplace(const key_type & key, Args&&... args)
+	{
+		return this->try_emplace_impl(key, std::forward<Args>(args)...);
+	}
+
+	template<typename... Args>
+	std::pair<typename Table::iterator, bool> try_emplace(key_type && key, Args&&... args)
+	{
+		return try_emplace_impl(std::forward<key_type>(key), std::forward<Args>(args)...);
+	}
+
+	template<typename... Args >
+	typename Table::iterator try_emplace(typename Table::const_iterator, const key_type & key, Args&&... args)
+	{
+		return try_emplace(key, std::forward<Args>(args)...).first;
+	}
+	template<typename... Args>
+	typename Table::iterator try_emplace(typename Table::const_iterator, key_type && key, Args&&... args)
+	{
+		return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...).first;
+	}
+
     friend bool operator==(const bytell_hash_map & lhs, const bytell_hash_map & rhs)
     {
         if (lhs.size() != rhs.size())
@@ -1180,6 +1215,14 @@ private:
             return V();
         }
     };
+
+	template <typename KeyType = key_type, class... Args>
+	std::pair<typename Table::iterator, bool> try_emplace_impl(KeyType&& key, Args&&... args) {
+		auto res = this->find(key);
+		if (res == this->end())
+			return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
+		return { { res }, false };
+	}
 };
 
 template<typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T> >
